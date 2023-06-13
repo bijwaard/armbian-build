@@ -10,8 +10,7 @@ OVERLAY_PREFIX='rockchip'
 SERIALCON=${SERIALCON:=$([ $BRANCH == "legacy" ] && echo "ttyFIQ0:1500000" || echo "ttyS2:1500000")}
 GOVERNOR="ondemand"
 ATFPATCHDIR='atf-rockchip64'
-BOOTBRANCH="tag:v2022.07"
-BOOTPATCHDIR="u-boot-rockchip64"
+BOOTPATCHDIR="${BOOTPATCHDIR:-"u-boot-rockchip64"}"
 PACKAGE_LIST_FAMILY="ethtool"
 
 RKBIN_DIR="$SRC/cache/sources/rkbin-tools"
@@ -65,7 +64,11 @@ if [[ $BOOT_SOC == rk3328 ]]; then
 elif [[ $BOOT_SOC == rk3399 ]]; then
 
 	BOOT_SCENARIO="${BOOT_SCENARIO:=only-blobs}"
-	DDR_BLOB="${DDR_BLOB:=rk33/rk3399_ddr_933MHz_v1.25.bin}"
+	if [[ $BOARD_NAME == "Tinker Board 2" ]]; then
+		DDR_BLOB="${DDR_BLOB:=rk33/rk3399_ddr_800MHz_v1.27.bin}"
+	else
+		DDR_BLOB="${DDR_BLOB:=rk33/rk3399_ddr_933MHz_v1.25.bin}"
+	fi
 	MINILOADER_BLOB='rk33/rk3399_miniloader_v1.26.bin'
 	BL31_BLOB='rk33/rk3399_bl31_v1.35.elf'
 
@@ -122,7 +125,7 @@ case $BRANCH in
 	edge)
 
 		KERNELPATCHDIR='rockchip64-'$BRANCH
-		KERNELBRANCH="branch:linux-6.0.y"
+		KERNELBRANCH="branch:linux-6.1.y"
 		LINUXFAMILY=rockchip64
 		LINUXCONFIG='linux-rockchip64-'$BRANCH
 
@@ -197,7 +200,7 @@ uboot_custom_postprocess() {
 	fi
 
 	if [[ $BOOT_SUPPORT_SPI == yes ]]; then
-		if [[ $BOARD == "rock-3a" ]] || [[ $BOARD == "rock-5b" ]]; then
+		if [[ $BOARD == "rock-3a" ]] || [[ $BOARD == "rock-5b" ]] || [[ $BOARD == "orangepi5" ]]; then
 			dd if=/dev/zero of=rkspi_loader.img bs=1M count=0 seek=16
 			/sbin/parted -s rkspi_loader.img mklabel gpt
 			/sbin/parted -s rkspi_loader.img unit s mkpart idbloader 64 7167
@@ -275,7 +278,7 @@ family_tweaks() {
 
 		chroot $SDCARD /bin/bash -c "systemctl --no-reload enable z28pro-bluetooth.service >/dev/null 2>&1"
 
-	elif [[ $BOARD == nanopi-r2s || $BOARD == nanopi-r2c || $BOARD == orangepi-r1plus || $BOARD == orangepi-r1plus-lts ]]; then
+	elif [[ $BOARD == nanopi-r2s || $BOARD == nanopi-r2c || $BOARD == orangepi-r1plus ]]; then
 
 		# rename USB based network to lan0
 		mkdir -p $SDCARD/etc/udev/rules.d/
@@ -296,6 +299,13 @@ family_tweaks() {
 		# install and enable Bluetooth
 		chroot $SDCARD /bin/bash -c "apt-get -y -qq install rfkill bluetooth bluez bluez-tools"
 		chroot $SDCARD /bin/bash -c "systemctl --no-reload enable sprd-bluetooth.service >/dev/null 2>&1"
+
+	fi
+
+	if [[ -f $SDCARD/lib/systemd/system/orangepi5-usb2-init.service ]]; then
+
+		# enable usb2 init service
+		chroot $SDCARD /bin/bash -c "systemctl --no-reload enable orangepi5-usb2-init.service >/dev/null 2>&1"
 
 	fi
 
@@ -322,6 +332,18 @@ family_tweaks() {
 			echo "su -c '/usr/bin/rtk_hciattach -n -s 115200 /dev/ttyS2 rtk_h5 &'" >> $SDCARD/etc/rc.local
 			echo "exit 0" >> $SDCARD/etc/rc.local
 		fi
+		if [[ $BRANCH == legacy && ($BOARD == station-m3) ]]; then
+			install -m 755 $SRC/packages/blobs/station/firefly_fan_control $SDCARD/usr/bin/firefly_fan_control
+			install -m 755 $SRC/packages/blobs/station/firefly-fan-init $SDCARD/usr/bin/firefly-fan-init
+			install -m 755 $SRC/packages/blobs/station/firefly-fan.service $SDCARD/usr/lib/systemd/system/firefly-fan.service
+			chroot $SDCARD /bin/bash -c "systemctl --no-reload enable firefly-fan.service >/dev/null 2>&1"
+		fi
+
+	fi
+
+	if [[ $BOARD == khadas-edge2 ]]; then
+
+		cp -R $SRC/packages/blobs/station/firmware/* $SDCARD/lib/firmware/
 
 	fi
 
